@@ -1,0 +1,111 @@
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>同步文件</title>
+<style>
+label {
+ width:100px;height:24px;line-height:22px;float:left;color:#616161;padding-left:18px;margin-right:5px;
+ } 
+</style>
+<body onload="get_files_list()">
+<div width = "550px">
+
+<div style="width:250px;height:20px;float:left;">
+    源项目：
+    <select id="Source">
+        <!--动态添加dom -->
+    </select>
+<br><br>
+自动提交svn：<input id="svnselect" type="checkbox" value=""/>
+<input style="width:250px;" type="text" id="svncommit" placeholder="svn提交备注,为空或没勾选不提交"/>
+<br><br>
+<textarea id = "syncFiles" placeholder= "test.php
+test1.php
+test.sql
+(填入需同步文件，文件间需换行)" 
+style="width:250px;height:180px"></textarea>
+<br><br>
+<button id = "startButton">开始同步</button>
+</div>
+
+<div id="Targer" style="width:300px;height:20px;float:left;">
+    <!--动态添加dom -->
+</div>
+
+</div>
+</body>
+<script src="https://cdn.bootcss.com/jquery/3.4.1/jquery.js"></script>
+<script>
+var lock = false;
+
+function get_files_list(){
+    $.get("http://127.0.0.1:8080/get_files_list", function(data, status) {
+        if (status == "success" && data != null){
+            object = JSON.parse(data);
+            var innerhtml = "";
+            var innerhtml1 = "";
+            $.each(object, function(key, val){
+                innerhtml += '<label><input type="checkbox" value="' + val + '"/>' + key + ' </label>'
+                innerhtml1 += '<option value="' + val + '">' + key + '</option>'
+            });
+            $("#Targer").append(innerhtml);
+            $("#Source").append(innerhtml1);
+        }
+    });
+}
+
+$(document).ready(function () {
+    $("#startButton").click(function(){
+        click_event();
+    });
+
+});
+
+function click_event() {
+    dir = $("#Source").val()
+    files = $("#syncFiles").val()
+    svnselect = $("#svnselect").is(':checked')
+    svncommit = $("#svncommit").val()
+    var projectList = [];
+    $.each($('input[type=checkbox]:checked'), function(i, item){
+        val = $(item).val();
+        if (val != "") {projectList.push(val);}
+    });
+    projectStr = projectList.join(',');
+    if (lock == false){
+        lock = true;
+        $.ajax({
+            url : "http://127.0.0.1:8080",
+            type : "post",
+            dataType : "json",
+            contentType: "application/x-www-form-urlencoded",
+            data : { dir:dir, files:files, projects:projectStr, svnselect:svnselect, svncommit:svncommit},
+            success : function(res){
+                check_res(res);
+                lock = false;
+            },
+            error : function(res){
+                alert("请求失败!!");
+                lock = false;
+            }
+        });
+    }else{
+        alert("请稍后，正在同步中")
+    }
+}
+
+function check_res(res){
+    if(res.Type == 1) {
+        alert("同步完成!!")
+    }else if(res.Type == 2){
+        alert("同步失败!!")
+    }else if(res.Type == 3){
+        alert("同步文件为空!!")
+    }else if(res.Type == 4){
+        alert("源项目路径为空!!")
+    }else if(res.Type == 5){
+        alert("请勾选所需同步项目!!")
+    }else if(res.Type == 6) {
+        alert("存在不允许同步的后缀文件!!")
+    }
+}
+
+</script>
