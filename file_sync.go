@@ -138,7 +138,11 @@ func handle_sync(w http.ResponseWriter, r *http.Request) {
         if len(errorDirs) > 0 {
             b, _ = json.Marshal(ReturnCommon{Type: 2})
         }else{
-            b, _ = json.Marshal(ReturnCommon{Type: 1})
+            if svncommit != ""{
+                b, _ = json.Marshal(ReturnCommon{Type: 7})
+            }else{
+                b, _ = json.Marshal(ReturnCommon{Type: 1})
+            }
         }
     }
     //返回结果
@@ -195,7 +199,7 @@ func project_sync(count chan int, projectDir string, fileInfoList []*fileInfo, s
     }
 
     //svn提交处理
-    commit_svn(svncommit, projectDir, fileInfoList)
+    go commit_svn(svncommit, projectDir, fileInfoList)
 
     count <- 1
 }
