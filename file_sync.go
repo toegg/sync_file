@@ -5,7 +5,6 @@ import (
     "fmt"
     "net/http"
     "net/url"
-    "os/exec"
 
     "time"
     "strings"
@@ -14,34 +13,9 @@ import (
     "io/ioutil"
     "os"
     "gopkg.in/ini.v1"
+    "file_sync/common"
+    "file_sync/esvn"
 )
-
-//文件的信息
-type fileInfo struct{
-    name string
-    info string
-    path string
-    is_write int
-    is_create int
-}
-
-//返回json
-type ReturnCommon struct {
-    Type int
-}
-
-//项目
-type project struct{
-    name string         //项目名称
-    path string          //项目路径
-}
-
-//项目的map
-var projectMap = make(map[string]project)
-
-var errorDirs []string
-
-var count = make(chan int)
 
 //初始化
 func init() {
@@ -51,8 +25,16 @@ func init() {
         return
     }
     list := cfg.Section("files").KeysHash()
-    for name, path := range list{
-        projectMap[path] = project{name, path}
+    for name,val := range list{
+        var path, keyword string
+        vals := strings.Split(val, "|")
+        if len(vals) == 2 {
+            path = strings.Trim(vals[0],"\"")
+            keyword = vals[1]
+        }else{
+            path = vals[0]
+        }
+        common.ProjectMap[path] = common.Project{name, path, keyword}
     }
 }
 
@@ -62,7 +44,14 @@ func main() {
         get_files_list(w, r)
     })
     http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        handle_sync(w, r)
+        common.FsyncLock.Lock()
+        defer common.FsyncLock.Unlock()
+        b, isLock := handle_sync(w, r)
+        common.ErrorDirs = common.ErrorDirs[0:0]
+        if isLock{
+           common.FsyncStatus = false
+        }
+        w.Write([]byte(b))
     })
     s := &http.Server{
         Addr: "localhost:8080",
@@ -85,23 +74,30 @@ func main() {
 }
 //请求获取文件名称和目录
 func get_files_list(w http.ResponseWriter, r *http.Request) {
-    header(w)
+    w.Header().Set("Access-Control-Allow-Origin", "*")
     var list = make(map[string]string)
-    for _, pj := range projectMap{
-        list[pj.name] = pj.path
+    for _, pj := range common.ProjectMap{
+       list[pj.Name] = pj.Path
     }
     b, err := json.Marshal(list)
     if err != nil{
-       w.Write([]byte(""))
-       return
+      w.Write([]byte(""))
+      return
     }
     w.Write([]byte(b))
 }
 
-
 //请求同步处理
-func handle_sync(w http.ResponseWriter, r *http.Request) {
-    header(w)
+func handle_sync(w http.ResponseWriter, r *http.Request) (b []byte, isLock bool) {
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+
+    //判断同步锁状态
+    if common.FsyncStatus{
+        b, _ := json.Marshal(common.ReturnCommon{Type: 8})
+        return b, false
+    }
+    common.FsyncStatus = true
+
     r.ParseForm()
     dir := get_string(r.Form["dir"])
     filesList := strings.Split(get_string(r.Form["files"]), "\n")
@@ -112,47 +108,79 @@ func handle_sync(w http.ResponseWriter, r *http.Request) {
     if svnselect == "true" {
         svncommit = get_string(r.Form["svncommit"])
     }
+    autobuild := ""
+    if svnselect == "true" && svncommit != ""{
+        autobuild = get_string(r.Form["autobuild"])
+    }
 
-    //筛选文件列表
-    fileInfoList, err := filter_files(dir, filesList)
+    //分离hrl和erl
+    erlFiles, err := filter_files(dir, filesList, len(projectsList))
 
-    var b []byte
     if dir == "" {
-        b, _ = json.Marshal(ReturnCommon{Type: 4})
-    }else if len(fileInfoList) <= 0{
-        b, _ = json.Marshal(ReturnCommon{Type: 3}) 
+        b, _ = json.Marshal(common.ReturnCommon{Type: 4})
+        return b, true
+    }else if len(erlFiles) <= 0{
+        b, _ = json.Marshal(common.ReturnCommon{Type: 3})
+        return b, true
     }else if projectsArgs == ""{
-        b, _ = json.Marshal(ReturnCommon{Type: 5}) 
+        b, _ = json.Marshal(common.ReturnCommon{Type: 5})
+        return b, true
     }else if err != nil {
-        b, _ = json.Marshal(ReturnCommon{Type: 6})
+        b, _ = json.Marshal(common.ReturnCommon{Type: 6})
+        return b, true
     }else{
         //开始同步
         for _, projectDir := range projectsList {
-            go project_sync(count, projectDir, fileInfoList, svncommit)
+            go project_sync(projectDir, erlFiles, svncommit, autobuild)
         }
 
+        //等待同步完成
         for i:=0; i< len(projectsList); i++{
-            <- count
+            <- common.Count
         }
 
-        if len(errorDirs) > 0 {
-            b, _ = json.Marshal(ReturnCommon{Type: 2})
+        if len(common.ErrorDirs) > 0 {
+            b, _ = json.Marshal(common.ReturnCommon{Type: 2})
+            return b, true
+            return
+        }
+
+        if svncommit != ""{
+            b, _ = json.Marshal(common.ReturnCommon{Type: 7})
+            //等待提交完成
+            go wait_svn_finish(len(projectsList))
+            return b, false
         }else{
-            if svncommit != ""{
-                b, _ = json.Marshal(ReturnCommon{Type: 7})
-            }else{
-                b, _ = json.Marshal(ReturnCommon{Type: 1})
-            }
-        }
+            b, _ = json.Marshal(common.ReturnCommon{Type: 1})
+            return b, true
+         }
     }
-    //返回结果
-    w.Write([]byte(b))
-
 }
 
-//筛选文件信息
-func filter_files(dir string, filesList []string) ([]*fileInfo, error) {
-    var filesInfoList []*fileInfo
+//等待svn执行完毕
+func wait_svn_finish(pjLen int) {
+    for i:=0; i< pjLen; i++{
+        <- common.BuildCount
+    }
+    failLen := len(common.FailProject)
+    if failLen <= 0 {
+        goto OVER
+    }
+
+    fmt.Printf("\n\n提交或编译失败的项目有如下：\n")
+    for _, val := range common.FailProject{
+        fmt.Printf("【%v】 ",val)
+    }
+OVER:
+    fmt.Printf("\n\n本次执行操作结束！！！\n")
+    common.FailProject = common.FailProject[0:0]
+    common.FsyncStatus = false
+}
+
+//筛选文件
+func filter_files(dir string, filesList []string, Cap int) ([]*common.FileInfo, error) {
+
+    var erlFiles []*common.FileInfo
     var errs error
 
     //获取放开的后缀名
@@ -166,109 +194,94 @@ func filter_files(dir string, filesList []string) ([]*fileInfo, error) {
     for _, file := range filesList{
         isAllowExt := is_in_ext_open(file, list)
         if isAllowExt {
-            files := &fileInfo{name:file}
+            files := &common.FileInfo{Name:file, CreateDirList:make(map[string][]string, Cap)}
             get_file_bytes(dir, dir, files)
-            if files.info != "" {
-                filesInfoList = append(filesInfoList, files)
+            if files.Info != "" {
+                erlFiles = append(erlFiles, files)
             }
         }else{
             errs = errors.New("not allow ext")
         }
     }
-
-    return filesInfoList, errs
+    return erlFiles, errs
 }
 
-//同步
-func project_sync(count chan int, projectDir string, fileInfoList []*fileInfo, svncommit string) {
-    for _, file := range fileInfoList{
+//开始同步
+func project_sync(projectDir string, erlFiles []*common.FileInfo, svncommit, build string) {
+    //svn更新处理
+    esvn.UpdateSvn(projectDir)
+
+    for _, file := range erlFiles{
         write_file_bytes(projectDir, file)
-        //写入失败了,尝试重新打开或创建
-        if file.is_write != 1 {
-            if _, err := os.Stat(projectDir + file.path); err != nil {
-                err = os.MkdirAll(projectDir + file.path, 0711)
-                check_err(err, projectDir)
-            }
-            f, err := os.OpenFile(projectDir + file.path + "\\" + file.name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-            check_err(err, projectDir)
-            _, err1 := f.Write([]byte(file.info))
-            check_err(err1, projectDir)
-            file.is_create = 1
-            f.Close()
-        }
     }
 
     //svn提交处理
-    go commit_svn(svncommit, projectDir, fileInfoList)
+    go esvn.CommitSvn(svncommit, build, projectDir, erlFiles)
 
-    count <- 1
+    common.Count <- 1
 }
 
-//svn提交处理
-func commit_svn(svncommit string, projectDir string, allFiles []*fileInfo) {
-    if svncommit != ""{
-        var files []string
-        var addFiles []string
-        for _, file := range allFiles{
-            files = append(files, projectDir + "\\" + file.path + "\\" + file.name)
-            if file.is_create == 1 {
-                addFiles = append(addFiles, projectDir + "\\" + file.path + "\\" + file.name)
-            }
+//写入目标项目文件
+func write_file_bytes(dir string, file *common.FileInfo) {
+    fileName := file.Name
+    fileBytes := file.Info
+    filePath := dir + file.Path + "\\" + fileName
+
+    if fileExists(filePath) { //直接写入
+        f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+        defer f.Close()
+        check_err(err, dir)
+        _, err1 := f.Write([]byte(fileBytes))
+        check_err(err1, dir)
+    }else{ //创建写入
+        if _, err := os.Stat(dir + file.Path); err != nil {
+            //筛选新增的多层级目录
+            filter_create_dir(file, dir, dir + file.Path)
+            err = os.MkdirAll(dir + file.Path, 0711)
+            check_err(err, dir)
         }
-        fmt.Printf("--------%v:start commit svn--------\n", projectDir)
-        //新增的文件执行add
-        if len(addFiles) > 0 {
-        args1 := []string{"add"}
-        args1 = append(args1, addFiles...)
-        cmd1 := exec.Command("svn", args1...)
-        cmd1.Dir = projectDir
-        cmd1.Run()
+        f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+        defer f.Close()
+        check_err(err, dir)
+        _, err1 := f.Write([]byte(file.Info))
+        check_err(err1, dir)
+    }
+    return
+}
+
+//筛选需要创建的目录(svn提交用)
+func filter_create_dir(file *common.FileInfo, dir, path string){
+    paths := strings.Split(path, "\\")
+
+    if len(paths) <= 0{
+        return
+    }
+
+    file.CreateDirList[dir] = []string{}
+    var basePath string
+    for key, val := range paths {
+        if key > 0 {
+            basePath += "\\" + val
+        }else{
+            basePath += val
         }
 
-        //提交svn
-        args := []string{"commit", "-m", svncommit}
-        args = append(args, files...)
-        cmd := exec.Command("svn", args...)
-        cmd.Dir = projectDir
-        out, err := cmd.Output()
-        if err != nil {
-            fmt.Println(err)
+        if !fileExists(basePath) {
+            dirList := file.CreateDirList[dir]
+            file.CreateDirList[dir] = append(dirList, basePath)
         }
-        fmt.Println(string(out))
-        fmt.Printf("--------%v:over commit svn--------\n", projectDir)
     }
 }
 
-//找文件并覆盖写入
-func write_file_bytes(dir string, file *fileInfo) {
-    rd, _ := ioutil.ReadDir(dir)
-    fileName := file.name
-    fileBytes := file.info
-    for _, fi := range rd {
-        if fi.Name() == fileName {
-            f, err := os.OpenFile(dir + "\\" + fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-            check_err(err, dir)
-            _, err1 := f.Write([]byte(fileBytes))  
-            check_err(err1, dir)
-            //标志文件写入完毕
-            file.is_write = 1
-            f.Close()
-            return           
-        } else {
-            write_file_bytes(dir + "\\" + fi.Name(), file)
-        }
-    }  
-}
-
-//找文件读取bytes
-func get_file_bytes(dirs string, nowdir string, files *fileInfo) {
+//获取源项目文件bytes
+func get_file_bytes(dirs string, nowdir string, files *common.FileInfo) {
     rd, _ := ioutil.ReadDir(nowdir)
     for _, fi := range rd {
-        if fi.Name() == files.name {
+        if fi.Name() == files.Name {
             bytes, _ := ioutil.ReadFile(nowdir + "\\" + fi.Name())
             str := string(bytes)  
-            files.info = str
-            files.path = "\\" + strings.TrimLeft(nowdir, dirs)
+            files.Info = str
+            files.Path = strings.TrimPrefix(nowdir, dirs)
             return       
         } else {
             if fi.IsDir() {
@@ -281,8 +294,9 @@ func get_file_bytes(dirs string, nowdir string, files *fileInfo) {
 //检测错误
 func check_err(err error, dir string){
     if err != nil{
-        errorDirs = append(errorDirs, dir)
-        count <- 1
+        fmt.Println(err)
+        common.ErrorDirs = append(common.ErrorDirs, dir)
+        common.Count <- 1
         return 
     }
 }
@@ -314,6 +328,14 @@ func get_string(v interface{}) string {
     return ""
 }
 
-func header(w http.ResponseWriter) {
-    w.Header().Set("Access-Control-Allow-Origin", "*") //允许访问所有域
+//文件是否存在
+func fileExists(path string) (bool) {
+    _, err := os.Stat(path)
+    if err == nil {
+        return true
+    }
+    if os.IsNotExist(err) {
+        return false
+    }
+    return false
 }

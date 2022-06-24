@@ -1,8 +1,8 @@
-module test.go
+module file_sync
 
-go 1.14
+go 1.16
 
 require (
-	github.com/zserge/lorca v0.1.9 // indirect
-	gopkg.in/ini.v1 v1.62.0 // indirect
+	github.com/zserge/lorca v0.1.10
+	gopkg.in/ini.v1 v1.66.4
 )
