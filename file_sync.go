@@ -139,10 +139,21 @@ func handle_sync(w http.ResponseWriter, r *http.Request) (b []byte, isLock bool)
             <- common.Count
         }
 
+<<<<<<< HEAD
         if len(common.ErrorDirs) > 0 {
             b, _ = json.Marshal(common.ReturnCommon{Type: 2})
             return b, true
             return
+=======
+        if len(errorDirs) > 0 {
+            b, _ = json.Marshal(ReturnCommon{Type: 2})
+        }else{
+            if svncommit != ""{
+                b, _ = json.Marshal(ReturnCommon{Type: 7})
+            }else{
+                b, _ = json.Marshal(ReturnCommon{Type: 1})
+            }
+>>>>>>> 68fe87bbee4a0657bd909bd35226325c36e6a264
         }
 
         if svncommit != ""{
@@ -216,7 +227,11 @@ func project_sync(projectDir string, erlFiles []*common.FileInfo, svncommit, bui
     }
 
     //svn提交处理
+<<<<<<< HEAD
     go esvn.CommitSvn(svncommit, build, projectDir, erlFiles)
+=======
+    go commit_svn(svncommit, projectDir, fileInfoList)
+>>>>>>> 68fe87bbee4a0657bd909bd35226325c36e6a264
 
     common.Count <- 1
 }

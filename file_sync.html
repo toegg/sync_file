@@ -92,6 +92,7 @@ function click_event() {
     }
 }
 
+<<<<<<< HEAD
     function check_res(res){
         if(res.Type == 1) {
             alert("同步完成!!")
@@ -110,6 +111,23 @@ function click_event() {
         }else if(res.Type == 8) {
             alert("请稍后，正在同步中")
         }
+=======
+function check_res(res){
+    if(res.Type == 1) {
+        alert("同步完成!!")
+    }else if(res.Type == 2){
+        alert("同步失败!!")
+    }else if(res.Type == 3){
+        alert("同步文件为空!!")
+    }else if(res.Type == 4){
+        alert("源项目路径为空!!")
+    }else if(res.Type == 5){
+        alert("请勾选所需同步项目!!")
+    }else if(res.Type == 6) {
+        alert("存在不允许同步的后缀文件!!")
+    }else if(res.Type == 7) {
+        alert("同步完成，正在提交svn中，暂勿关闭窗口，可通过log查看进度!!")
+>>>>>>> 68fe87bbee4a0657bd909bd35226325c36e6a264
     }
 
 </script>
