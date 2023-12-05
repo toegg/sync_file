@@ -1,5 +1,5 @@
 package test_sync1
 
-func Test(){
-
+func Test() {
+	qqqqqqqqqqqqqqqq111
 }

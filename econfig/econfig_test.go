@@ -11,19 +11,19 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetIniProject(t *testing.T) {
-	list, err := GetIniProject()
-	if err != nil{
+	list, strList, err := GetIniProject()
+	if err != nil {
 		t.Errorf("GetIniProject Err:%v", err.Error())
 		return
 	}
-	if len(list) <= 0 {
+	if len(list) <= 0 || len(strList) <= 0 {
 		t.Error("GetIniProject is empty")
 	}
 }
 
 func TestGetAllowExts(t *testing.T) {
 	list, err := GetAllowExts()
-	if err != nil{
+	if err != nil {
 		t.Errorf("GetAllowExts Err:%v", err.Error())
 		return
 	}
@@ -34,11 +34,11 @@ func TestGetAllowExts(t *testing.T) {
 
 func TestGetComparePath(t *testing.T) {
 	path, err := GetComparePath()
-	if err != nil{
+	if err != nil {
 		t.Errorf("GetComparePath Err:%v", err.Error())
 		return
 	}
-	if path == ""{
+	if path == "" {
 		t.Error("GetComparePath path is empty")
 	}
 }

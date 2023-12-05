@@ -45,7 +45,7 @@ func TestCallCompareSync(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func(waitCtx context.Context) {
-WAIT:
+	WAIT:
 		for {
 			select {
 			case <-waitCtx.Done():
@@ -57,7 +57,7 @@ WAIT:
 	}(ctx)
 
 	os.Chdir("../")
-	CallCompareSync("etest/test_sync1", files, []string{}, ch)
+	CallCompareSync("etest/test_sync1", files, ch)
 	cancel()
 	if len(ch_dir) > 0 {
 		t.Error("CallCompareSync fail")

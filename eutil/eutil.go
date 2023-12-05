@@ -8,13 +8,26 @@ import (
 	"strings"
 )
 
-func IsAllowExt(file string, extOpens []string) bool{
+func IsAllowExt(file string, extOpens []string) bool {
 	for _, v := range extOpens {
-		if strings.Contains(file, v){
+		if strings.Contains(file, v) {
 			return true
 		}
 	}
 	return false
+}
+
+//过滤数组中相同的
+func FilterSameInArray[T comparable](arr []T) []T {
+	newArr := []T{}
+	existMap := make(map[T]int, len(arr))
+	for _, val := range arr {
+		if _, ok := existMap[val]; !ok {
+			newArr = append(newArr, val)
+			existMap[val] = 1
+		}
+	}
+	return newArr
 }
 
 //转为string
@@ -47,16 +60,16 @@ func FileExists(path string) (bool) {
 }
 
 //写入文件
-func WriteToFile(filePath string, destDir string, byte []byte) error{
+func WriteToFile(filePath string, destDir string, byte []byte) error {
 	if _, err := os.Stat(destDir); err != nil {
 		err = os.MkdirAll(destDir, 0711)
-		if err != nil{
+		if err != nil {
 			return err
 		}
 	}
 	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	defer f.Close()
-	if err !=nil {
+	if err != nil {
 		return err
 	}
 	_, err = f.Write(byte)
