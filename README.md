@@ -11,6 +11,11 @@
 同步多个目标项目时，以目标项目对应文件的md5为基准，如果都一样，只会随机其中一个目标项目调起工具对比一次，而其它目标项目则以对比后的文件内容覆盖式同步，减少多次调起繁琐操作。
 当然也存在版本文件不同，则会调起每个目标项目文件对比，支持同个文件同步到不同版本的差异化。
 
+### 工具链接 
+**gitee**: [https://gitee.com/toegg/file_sync  ](https://gitee.com/toegg/file_sync)  
+ 
+**github**: [https://github.com/toegg/sync_file](https://github.com/toegg/sync_file)  
+
 ### 展示
 
 ui界面

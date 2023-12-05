@@ -140,11 +140,11 @@ func (s *SyncService) NewGuiContent() fyne.CanvasObject {
 	}
 	//svn备注Text
 	svnEntry := widget.NewMultiLineEntry()
-	svnEntry.SetPlaceHolder("svn提交备注(格式：【功能】XXX)，\n为空或没勾选则不提交")
+	svnEntry.SetPlaceHolder("svn提交备注(XXX)，\n为空或没勾选则不提交")
 
 	//同步文件Text
 	fileEntry := widget.NewMultiLineEntry()
-	fileEntry.SetPlaceHolder("def_goods.hrl\n lib_guild.erl\n pp_guild.erl\n (填入需同步文件，文件间需换行)")
+	fileEntry.SetPlaceHolder("test.go\n test.sql\n test.txt\n (填入需同步文件，文件间需换行)")
 
 	//同步按钮
 	syncButton := widget.Button{
